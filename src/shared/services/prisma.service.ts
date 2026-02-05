@@ -16,7 +16,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     super({
       adapter,
-      log: ['query', 'info', 'warn', 'error'],
+      // log: ['query', 'info', 'warn', 'error'],
     });
   }
   

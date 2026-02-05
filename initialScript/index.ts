@@ -6,6 +6,7 @@ import { PrismaService } from 'src/shared/services/prisma.service'
 const prismaService = new PrismaService()
 const hashingService = new HashingService()
 const main = async () => {
+  console.log('create role');
   const roleCount = await prismaService.role.count()
   if (roleCount > 0) {
     throw new Error('Roles already exist in the database.')
