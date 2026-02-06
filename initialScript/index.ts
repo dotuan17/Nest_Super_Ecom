@@ -1,7 +1,7 @@
-import envConfig from 'src/shared/config'
-import { RoleName } from 'src/shared/constants/role.constant'
-import { HashingService } from 'src/shared/services/hashing.service'
-import { PrismaService } from 'src/shared/services/prisma.service'
+import envConfig from 'src/routes/shared/config'
+import { RoleName } from 'src/routes/shared/constants/role.constant'
+import { HashingService } from 'src/routes/shared/services/hashing.service'
+import { PrismaService } from 'src/routes/shared/services/prisma.service'
 
 const prismaService = new PrismaService()
 const hashingService = new HashingService()
