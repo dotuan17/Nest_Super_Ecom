@@ -10,6 +10,8 @@ import { addMilliseconds } from 'date-fns'
 import ms from 'ms'
 import envConfig from '../shared/config'
 import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
+import { EmailService } from '../shared/services/email.service'
+import path from 'path'
 
 @Injectable()
 export class AuthService {
@@ -18,6 +20,7 @@ export class AuthService {
     private readonly roleService: RolesService,
     private readonly authRepository: AuthRepository,
     private readonly shareUserRepository: ShareUserRepository,
+    private readonly emailService: EmailService,
   ) {}
   async register(body: RegisterBodyType) {
     try {
@@ -78,6 +81,14 @@ export class AuthService {
       type: body.type,
       expiresAt: addMilliseconds(new Date(), ms(envConfig.OTP_EXPIRES_IN as ms.StringValue)), // 15 minutes from now
     })
+
+    const {error} = await this.emailService.sendOTP({ email: body.email, code })
+    if(error){
+      throw new UnprocessableEntityException([{
+        message: 'Failed to send OTP email',
+        path: 'code'
+      }])
+    }
 
     return verificationCode
   }
