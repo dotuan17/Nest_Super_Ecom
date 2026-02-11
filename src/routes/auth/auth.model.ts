@@ -1,26 +1,8 @@
 import z from "zod";
-import { UserStatus } from "../shared/constants/auth.constant";
+import { TypeOfVerificationCode } from "../shared/constants/auth.constant";
+import { UserSchema } from "../shared/models/shared-user.model";
 
-export const UserSchema = z.object({
-  id: z.number(),
-  email: z.email(),
-  name: z.string().min(1).max(100),
-  password: z.string().min(6).max(100),
-  phoneNumber: z.string().min(9).max(15),
-  avatar: z.string().nullable(),
-  totpSecret: z.string().nullable(),
-  status: z.enum(UserStatus),
-  roleId: z.number().positive(),
-  createdById: z.number().nullable(),
-  updatedById: z.number().nullable(),
-  deletedById: z.number().nullable(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
-  deletedAt: z.date().nullable(),
-}).strict()
-
-export type UserType = z.infer<typeof UserSchema>
-
+// User Schema
 export const RegisterBodySchema = UserSchema.pick({
     email: true,
     password: true,
@@ -28,6 +10,7 @@ export const RegisterBodySchema = UserSchema.pick({
     phoneNumber: true,
 }).extend({
     confirmPassword: z.string().min(6).max(100),
+    code: z.string().length(6)
 }).strict().superRefine(({ confirmPassword, password }, ctx) => {
   if (password !== confirmPassword) {
     ctx.addIssue({
@@ -46,3 +29,23 @@ export const RegisterResSchema = UserSchema.omit({
 });
 
 export type RegisterResType = z.infer<typeof RegisterResSchema>;
+
+// Verification Code Schema
+export const VerificationCode = z.object({
+    id: z.number(),
+    email: z.email(),
+    code: z.string().length(6),
+    type: z.enum([ TypeOfVerificationCode.REGISTER, TypeOfVerificationCode.FORGOT_PASSWORD, TypeOfVerificationCode.LOGIN, TypeOfVerificationCode.DISABLE_2FA ]),
+    expiresAt: z.date(),
+    createdAt: z.date(),
+}).strict();
+
+export type VerificationCodeType = z.infer<typeof VerificationCode>;
+
+// Send OTP Body Schema
+export const SendOTPBodySchema = VerificationCode.pick({
+    email: true,
+    type: true,
+}).strict();
+
+export type SendOTPBodyType = z.infer<typeof SendOTPBodySchema>;
