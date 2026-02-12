@@ -83,6 +83,7 @@ export class AuthService {
     })
 
     const {error} = await this.emailService.sendOTP({ email: body.email, code })
+    console.log(error);
     if(error){
       throw new UnprocessableEntityException([{
         message: 'Failed to send OTP email',
