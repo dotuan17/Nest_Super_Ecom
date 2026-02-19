@@ -11,7 +11,6 @@ import ms from 'ms'
 import envConfig from '../shared/config'
 import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
 import { EmailService } from '../shared/services/email.service'
-import path from 'path'
 import { TokenService } from '../shared/services/token.service'
 import { AccessTokenPayloadCreate } from '../shared/types/jwt.type'
 
