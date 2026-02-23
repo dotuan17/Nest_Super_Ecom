@@ -2,10 +2,10 @@ import { HashingService } from 'src/routes/shared/services/hashing.service'
 import { RolesService } from './roles.service'
 import { generateOTP, isUniqueConstraintPrismaError } from 'src/routes/shared/helpers'
 import { Injectable } from '@nestjs/common/decorators/core/injectable.decorator'
-import { LoginBodyType, RegisterBodyType, SendOTPBodyType } from './auth.model'
+import { LoginBodyType, RefreshTokenBodyType, RegisterBodyType, SendOTPBodyType } from './auth.model'
 import { AuthRepository } from './auth.repo'
 import { ShareUserRepository } from '../shared/repositories/shared-user.repo'
-import { UnprocessableEntityException } from '@nestjs/common'
+import { HttpException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common'
 import { addMilliseconds } from 'date-fns'
 import ms from 'ms'
 import envConfig from '../shared/config'
@@ -13,7 +13,6 @@ import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
 import { EmailService } from '../shared/services/email.service'
 import { TokenService } from '../shared/services/token.service'
 import { AccessTokenPayloadCreate } from '../shared/types/jwt.type'
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -143,5 +142,32 @@ export class AuthService {
       deviceId: deviceId,
     })
     return { accessToken, refreshToken }
+  }
+
+  async refreshToken ({refreshToken, userAgent, ip}: RefreshTokenBodyType & { userAgent: string, ip: string}) {
+    try {
+      // 1.kiem tra token co hop le khong
+      const { userId } = await this.tokenService.verifyRefreshToken(refreshToken)
+      // 2.kiem tra token co ton tai trong db khong
+      const refreshTokenInDB = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({token: refreshToken})
+      if(!refreshTokenInDB){
+        throw new UnauthorizedException('Refresh token khong ton tai trong db')
+      }
+      const { deviceId, user: { roleId, role:{ name } } } = refreshTokenInDB
+      // 3.cap nhat device
+      const $updateDevice = this.authRepository.updateDevice(deviceId, {ip, userAgent})
+      // 4.xoa refresh token cu
+      const $deleteRefreshToken = this.authRepository.deleteRefreshToken({token: refreshToken})
+      // 5.tao token moi
+      const $tokens = this.generateTokens({userId,deviceId, roleId, roleName: name})
+      const [, , tokens ] =  await Promise.all([$updateDevice, $deleteRefreshToken, $tokens])
+      return tokens 
+    } catch (error) {
+      console.log(error);
+      if (error instanceof HttpException){
+        throw error
+      }
+      throw new UnauthorizedException()
+    }
   }
 }
