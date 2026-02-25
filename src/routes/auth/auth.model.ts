@@ -97,6 +97,21 @@ export const RefreshTokenSchema = z.object({
 
 export const LogoutBodySchema = RefreshTokenBodySchema;
 
+export const ForgotPasswordBodySchema = z.object({
+    email: z.email(),
+    code: z.string().length(6),
+    newPassword: z.string().min(6).max(100),
+    confirmNewPassword: z.string().min(6).max(100),
+}).strict().superRefine(({ confirmNewPassword, newPassword }, ctx) => {
+  if (newPassword !== confirmNewPassword) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Passwords do not match',
+      path: ['confirmNewPassword'],
+    });
+  }
+});
+
 export type RegisterBodyType = z.infer<typeof RegisterBodySchema>;
 export type RegisterResType = z.infer<typeof RegisterResSchema>;
 export type VerificationCodeType = z.infer<typeof VerificationCodeSchema>;
@@ -109,3 +124,4 @@ export type DeviceType = z.infer<typeof DeviceSchema>;
 export type RoleType = z.infer<typeof RoleSchema>;
 export type RefreshTokenType = z.infer<typeof RefreshTokenSchema>;
 export type LogoutBodyType = z.infer<typeof LogoutBodySchema>;
+export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBodySchema>;

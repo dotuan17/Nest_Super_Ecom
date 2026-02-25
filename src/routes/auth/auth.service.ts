@@ -1,6 +1,6 @@
 import { HashingService } from 'src/routes/shared/services/hashing.service'
 import { RolesService } from './roles.service'
-import { generateOTP, isUniqueConstraintPrismaError } from 'src/routes/shared/helpers'
+import { generateOTP, isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/routes/shared/helpers'
 import { Injectable } from '@nestjs/common/decorators/core/injectable.decorator'
 import { LoginBodyType, RefreshTokenBodyType, RegisterBodyType, SendOTPBodyType } from './auth.model'
 import { AuthRepository } from './auth.repo'
@@ -13,6 +13,7 @@ import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
 import { EmailService } from '../shared/services/email.service'
 import { TokenService } from '../shared/services/token.service'
 import { AccessTokenPayloadCreate } from '../shared/types/jwt.type'
+import { EmailAlreadyExistsException, EmailNotFoundException, FailedToSendOTPException, InvalidOTPException, InvalidPasswordException, OTPExpiredException } from './error.model'
 @Injectable()
 export class AuthService {
   constructor(
@@ -25,22 +26,16 @@ export class AuthService {
   ) {}
   async register(body: RegisterBodyType) {
     try {
-      const verificationCode = await this.authRepository.findVerificationCode({ 
-        email: body.email, 
-        type: TypeOfVerificationCode.REGISTER, 
-        code: body.code 
+      const verificationCode = await this.authRepository.findVerificationCode({
+        email: body.email,
+        type: TypeOfVerificationCode.REGISTER,
+        code: body.code,
       })
-      if(!verificationCode){
-        throw new UnprocessableEntityException([{
-          path: 'code',
-          message: 'Ma OTP khong hop le',
-        }])
+      if (!verificationCode) {
+        throw InvalidOTPException
       }
-      if(verificationCode.expiresAt < new Date()){
-        throw new UnprocessableEntityException([{
-          path: 'code',
-          message: 'OTP has expired',
-        }])
+      if (verificationCode.expiresAt < new Date()) {
+        throw OTPExpiredException
       }
 
       const hashedPassword = await this.hashingService.hash(body.password)
@@ -55,10 +50,7 @@ export class AuthService {
       return user
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
-        throw new UnprocessableEntityException({
-          path: 'email',
-          message: 'Email already exists',
-        })
+        throw EmailAlreadyExistsException
       }
       throw error
     }
@@ -67,13 +59,10 @@ export class AuthService {
   async sendOTP(body: SendOTPBodyType) {
     // Implementation for sending OTP
     const user = await this.shareUserRepository.findUnique({ email: body.email })
-    if(user) {
+    if (user) {
       // Logic to send OTP to existing user
-      throw new UnprocessableEntityException([{
-          path: 'email',
-          message: 'Email already exists',
-      }])
-    } 
+      throw EmailAlreadyExistsException
+    }
 
     const code = generateOTP()
     const verificationCode = await this.authRepository.createVerificationCode({
@@ -83,34 +72,25 @@ export class AuthService {
       expiresAt: addMilliseconds(new Date(), ms(envConfig.OTP_EXPIRES_IN as ms.StringValue)), // 15 minutes from now
     })
 
-    const {error} = await this.emailService.sendOTP({ email: body.email, code })
-    console.log(error);
-    if(error){
-      throw new UnprocessableEntityException([{
-        message: 'Failed to send OTP email',
-        path: 'code'
-      }])
+    const { error } = await this.emailService.sendOTP({ email: body.email, code })
+    console.log(error)
+    if (error) {
+      throw FailedToSendOTPException
     }
 
-    return verificationCode
+    return { message: 'OTP sent successfully' }
   }
 
-  async login(body: LoginBodyType & { userAgent: string, ip: string }) {
+  async login(body: LoginBodyType & { userAgent: string; ip: string }) {
     const user = await this.authRepository.findUniqueIncludeRole({ email: body.email })
-    if(!user) {
-      throw new UnprocessableEntityException([{
-        path: 'email',
-        message: 'Email does not exist',
-      }])
+    if (!user) {
+      throw EmailNotFoundException
     }
     const isPasswordValid = await this.hashingService.compare(body.password, user.password)
-    if(!isPasswordValid) {
-      throw new UnprocessableEntityException([{
-        path: 'password',
-        message: 'Password is incorrect',
-      }])
+    if (!isPasswordValid) {
+      throw InvalidPasswordException
     }
-    const device =  await this.authRepository.createDevice({
+    const device = await this.authRepository.createDevice({
       userId: user.id,
       userAgent: body.userAgent,
       ip: body.ip,
@@ -134,7 +114,7 @@ export class AuthService {
       }),
       this.tokenService.signRefreshToken({ userId }),
     ])
-    const decodedRefreshToken = await this.tokenService.verifyRefreshToken(refreshToken);
+    const decodedRefreshToken = await this.tokenService.verifyRefreshToken(refreshToken)
     await this.authRepository.createRefreshToken({
       token: refreshToken,
       userId: userId,
@@ -144,28 +124,51 @@ export class AuthService {
     return { accessToken, refreshToken }
   }
 
-  async refreshToken ({refreshToken, userAgent, ip}: RefreshTokenBodyType & { userAgent: string, ip: string}) {
+  async refreshToken({ refreshToken, userAgent, ip }: RefreshTokenBodyType & { userAgent: string; ip: string }) {
     try {
       // 1.kiem tra token co hop le khong
       const { userId } = await this.tokenService.verifyRefreshToken(refreshToken)
       // 2.kiem tra token co ton tai trong db khong
-      const refreshTokenInDB = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({token: refreshToken})
-      if(!refreshTokenInDB){
-        throw new UnauthorizedException('Refresh token khong ton tai trong db')
+      const refreshTokenInDB = await this.authRepository.findUniqueRefreshTokenIncludeUserRole({ token: refreshToken })
+      if (!refreshTokenInDB) {
+        throw new UnauthorizedException('Refresh token da duoc su dung')
       }
-      const { deviceId, user: { roleId, role:{ name } } } = refreshTokenInDB
+      const {
+        deviceId,
+        user: {
+          roleId,
+          role: { name },
+        },
+      } = refreshTokenInDB
       // 3.cap nhat device
-      const $updateDevice = this.authRepository.updateDevice(deviceId, {ip, userAgent})
+      const $updateDevice = this.authRepository.updateDevice(deviceId, { ip, userAgent })
       // 4.xoa refresh token cu
-      const $deleteRefreshToken = this.authRepository.deleteRefreshToken({token: refreshToken})
+      const $deleteRefreshToken = this.authRepository.deleteRefreshToken({ token: refreshToken })
       // 5.tao token moi
-      const $tokens = this.generateTokens({userId,deviceId, roleId, roleName: name})
-      const [, , tokens ] =  await Promise.all([$updateDevice, $deleteRefreshToken, $tokens])
-      return tokens 
+      const $tokens = this.generateTokens({ userId, deviceId, roleId, roleName: name })
+      const [, , tokens] = await Promise.all([$updateDevice, $deleteRefreshToken, $tokens])
+      return tokens
     } catch (error) {
-      console.log(error);
-      if (error instanceof HttpException){
+      console.log(error)
+      if (error instanceof HttpException) {
         throw error
+      }
+      throw new UnauthorizedException()
+    }
+  }
+
+  async logout(refreshToken) {
+    try {
+      // kiem tra token co hop le hay khong
+      await this.tokenService.verifyRefreshToken(refreshToken)
+      // xoa refreshtoken trong db
+      const { deviceId } = await this.authRepository.deleteRefreshToken({ token: refreshToken })
+      // cap nhat device la da logout
+      await this.authRepository.updateDevice(deviceId, { isActive: false })
+      return { message: 'Dang xuat thanh cong'}
+    } catch (error) {
+      if(isNotFoundPrismaError(error)){
+        throw new UnauthorizedException('Refresh token da duoc su dung')
       }
       throw new UnauthorizedException()
     }
