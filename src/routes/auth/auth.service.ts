@@ -2,18 +2,31 @@ import { HashingService } from 'src/routes/shared/services/hashing.service'
 import { RolesService } from './roles.service'
 import { generateOTP, isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/routes/shared/helpers'
 import { Injectable } from '@nestjs/common/decorators/core/injectable.decorator'
-import { LoginBodyType, RefreshTokenBodyType, RegisterBodyType, SendOTPBodyType } from './auth.model'
+import {
+  ForgotPasswordBodyType,
+  LoginBodyType,
+  RefreshTokenBodyType,
+  RegisterBodyType,
+  SendOTPBodyType,
+} from './auth.model'
 import { AuthRepository } from './auth.repo'
 import { ShareUserRepository } from '../shared/repositories/shared-user.repo'
-import { HttpException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common'
+import { HttpException, Type, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common'
 import { addMilliseconds } from 'date-fns'
 import ms from 'ms'
 import envConfig from '../shared/config'
-import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
+import { TypeOfVerificationCode, TypeOfVerificationCodeType } from '../shared/constants/auth.constant'
 import { EmailService } from '../shared/services/email.service'
 import { TokenService } from '../shared/services/token.service'
 import { AccessTokenPayloadCreate } from '../shared/types/jwt.type'
-import { EmailAlreadyExistsException, EmailNotFoundException, FailedToSendOTPException, InvalidOTPException, InvalidPasswordException, OTPExpiredException } from './error.model'
+import {
+  EmailAlreadyExistsException,
+  EmailNotFoundException,
+  FailedToSendOTPException,
+  InvalidOTPException,
+  InvalidPasswordException,
+  OTPExpiredException,
+} from './error.model'
 @Injectable()
 export class AuthService {
   constructor(
@@ -24,29 +37,52 @@ export class AuthService {
     private readonly emailService: EmailService,
     private readonly tokenService: TokenService,
   ) {}
+
+  async validateVerificationCode({
+    email,
+    code,
+    type,
+  }: {
+    email: string
+    code: string
+    type: TypeOfVerificationCodeType
+  }) {
+    const verificationCode = await this.authRepository.findUniqueVerificationCode({
+      email,
+      code,
+      type,
+    })
+    if (!verificationCode) {
+      throw InvalidOTPException
+    }
+    if (verificationCode.expiresAt < new Date()) {
+      throw OTPExpiredException
+    }
+    return verificationCode
+  }
+
   async register(body: RegisterBodyType) {
     try {
-      const verificationCode = await this.authRepository.findVerificationCode({
-        email: body.email,
-        type: TypeOfVerificationCode.REGISTER,
-        code: body.code,
-      })
-      if (!verificationCode) {
-        throw InvalidOTPException
-      }
-      if (verificationCode.expiresAt < new Date()) {
-        throw OTPExpiredException
-      }
+      // Kiem tra OTP co hop le khong
+      const verify = await this.validateVerificationCode({ email: body.email, code: body.code, type: TypeOfVerificationCode.REGISTER })
 
       const hashedPassword = await this.hashingService.hash(body.password)
       const roleId = await this.roleService.getClientRoleId()
-      const user = await this.authRepository.createUser({
-        email: body.email,
-        phoneNumber: body.phoneNumber,
-        name: body.name,
-        password: hashedPassword,
-        roleId,
-      })
+      // Tao user moi va xoa OTP da su dung
+      const [user] = await Promise.all([
+        this.authRepository.createUser({
+          email: body.email,
+          phoneNumber: body.phoneNumber,
+          name: body.name,
+          password: hashedPassword,
+          roleId,
+        }),
+        this.authRepository.deleteVerificationCode({
+          email: body.email,
+          code: body.code,
+          type: TypeOfVerificationCode.REGISTER,
+        }),
+      ])
       return user
     } catch (error) {
       if (isUniqueConstraintPrismaError(error)) {
@@ -59,13 +95,17 @@ export class AuthService {
   async sendOTP(body: SendOTPBodyType) {
     // Implementation for sending OTP
     const user = await this.shareUserRepository.findUnique({ email: body.email })
-    if (user) {
+    if (user && body.type === TypeOfVerificationCode.REGISTER) {
       // Logic to send OTP to existing user
       throw EmailAlreadyExistsException
     }
 
+    if (!user && body.type === TypeOfVerificationCode.FORGOT_PASSWORD) {
+      throw EmailNotFoundException
+    }
+
     const code = generateOTP()
-    const verificationCode = await this.authRepository.createVerificationCode({
+    const vfCode = await this.authRepository.createVerificationCode({
       email: body.email,
       code,
       type: body.type,
@@ -157,7 +197,7 @@ export class AuthService {
     }
   }
 
-  async logout(refreshToken) {
+  async logout(refreshToken: string) {
     try {
       // kiem tra token co hop le hay khong
       await this.tokenService.verifyRefreshToken(refreshToken)
@@ -165,12 +205,31 @@ export class AuthService {
       const { deviceId } = await this.authRepository.deleteRefreshToken({ token: refreshToken })
       // cap nhat device la da logout
       await this.authRepository.updateDevice(deviceId, { isActive: false })
-      return { message: 'Dang xuat thanh cong'}
+      return { message: 'Dang xuat thanh cong' }
     } catch (error) {
-      if(isNotFoundPrismaError(error)){
+      if (isNotFoundPrismaError(error)) {
         throw new UnauthorizedException('Refresh token da duoc su dung')
       }
       throw new UnauthorizedException()
     }
+  }
+
+  async forgotPassword(body: ForgotPasswordBodyType) {
+    const { email, code, newPassword } = body
+    // Kiem tra email co ton tai khong
+    const user = await this.shareUserRepository.findUnique({ email })
+    if (!user) {
+      throw EmailNotFoundException
+    }
+    // Kiem tra OTP co hop le khong
+    await this.validateVerificationCode({ email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD })
+    const hashedPassword = await this.hashingService.hash(newPassword)
+
+    // Cap nhat password moi cva xoa OTP da su dung
+    await Promise.all([
+      this.authRepository.updateUser({ email }, { password: hashedPassword }),
+      this.authRepository.deleteVerificationCode({ email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD }),
+    ])
+    return { message: 'Password updated successfully' }
   }
 }

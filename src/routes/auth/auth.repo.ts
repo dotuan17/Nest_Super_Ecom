@@ -27,12 +27,13 @@ export class AuthRepository {
       update: {
         code: payload.code,
         expiresAt: payload.expiresAt,
+        type: payload.type,
       },
       create: payload,
     })
   }
 
-  async findVerificationCode(
+  async findUniqueVerificationCode(
     uniqueValue: { email: string } | { id: number } | { email: string; type: TypeOfVerificationCodeType; code: string },
   ): Promise<VerificationCodeType | null> {
     return await this.prismaService.verificationCode.findUnique({
@@ -55,21 +56,21 @@ export class AuthRepository {
   }
 
   async findUniqueIncludeRole(
-    uniqueObject: { email: string } | { id: number },
+    uniqueValue: { email: string } | { id: number },
   ): Promise<(UserType & { role: RoleType }) | null> {
     return await this.prismaService.user.findUnique({
-      where: uniqueObject,
+      where: uniqueValue,
       include: {
         role: true,
       },
     })
   }
 
-  async findUniqueRefreshTokenIncludeUserRole(uniqueObject: {
+  async findUniqueRefreshTokenIncludeUserRole(uniqueValue: {
     token: string
   }): Promise<(RefreshTokenType & { user: UserType & { role: RoleType } }) | null> {
     return await this.prismaService.refreshToken.findUnique({
-      where: uniqueObject,
+      where: uniqueValue,
       include: {
         user: {
           include: {
@@ -81,7 +82,7 @@ export class AuthRepository {
   }
 
   async updateDevice(deviceId: number, data: Partial<DeviceType>): Promise<DeviceType> {
-    return this.prismaService.device.update({
+    return await this.prismaService.device.update({
       where: {
         id: deviceId,
       },
@@ -89,9 +90,27 @@ export class AuthRepository {
     })
   }
 
-  async deleteRefreshToken(uniqueObject: { token: string }): Promise<RefreshTokenType> {
-    return this.prismaService.refreshToken.delete({
-      where: uniqueObject,
+  async deleteRefreshToken(uniqueValue: { token: string }): Promise<RefreshTokenType> {
+    return await this.prismaService.refreshToken.delete({
+      where: uniqueValue,
+    })
+  }
+
+  async updateUser(
+    uniqueValue: { id: number } | { email: string },
+    data: Partial<UserType>,
+  ): Promise<Omit<UserType, 'id'>> {
+    return await this.prismaService.user.update({
+      where: uniqueValue,
+      data,
+    })
+  }
+
+  async deleteVerificationCode(
+    uniqueValue: { id: number } | { email: string } | { email: string; type: TypeOfVerificationCodeType; code: string },
+  ): Promise<VerificationCodeType> {
+    return await this.prismaService.verificationCode.delete({
+      where: uniqueValue,
     })
   }
 }

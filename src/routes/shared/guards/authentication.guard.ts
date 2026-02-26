@@ -45,7 +45,6 @@ export class AuthenticationGuard implements CanActivate {
           error = err
           return false
         })
-        console.log(canActivate);
         if(!canActivate){
           throw new UnauthorizedException()
         }
