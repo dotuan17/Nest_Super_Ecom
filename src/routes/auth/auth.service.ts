@@ -3,6 +3,7 @@ import { RolesService } from './roles.service'
 import { generateOTP, isNotFoundPrismaError, isUniqueConstraintPrismaError } from 'src/routes/shared/helpers'
 import { Injectable } from '@nestjs/common/decorators/core/injectable.decorator'
 import {
+  Disable2FABodyType,
   ForgotPasswordBodyType,
   LoginBodyType,
   RefreshTokenBodyType,
@@ -11,7 +12,7 @@ import {
 } from './auth.model'
 import { AuthRepository } from './auth.repo'
 import { ShareUserRepository } from '../shared/repositories/shared-user.repo'
-import { HttpException, Type, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common'
+import { HttpException, UnauthorizedException } from '@nestjs/common'
 import { addMilliseconds } from 'date-fns'
 import ms from 'ms'
 import envConfig from '../shared/config'
@@ -25,11 +26,13 @@ import {
   FailedToSendOTPException,
   InvalidOTPException,
   InvalidPasswordException,
+  InvalidTOTPAndCodeException,
+  InvalidTOTPException,
   OTPExpiredException,
   TOTPAlreadyEnabledException,
+  TOTPNotEnabledException,
 } from './error.model'
 import { TwoFactorAuthService } from '../shared/services/2fa.service'
-import { email } from 'zod'
 @Injectable()
 export class AuthService {
   constructor(
@@ -83,11 +86,13 @@ export class AuthService {
           password: hashedPassword,
           roleId,
         }),
-        this.authRepository.deleteVerificationCode({ email_code_type:{
-          email: body.email,
-          code: body.code,
-          type: TypeOfVerificationCode.REGISTER,
-        }}),
+        this.authRepository.deleteVerificationCode({
+          email_code_type: {
+            email: body.email,
+            code: body.code,
+            type: TypeOfVerificationCode.REGISTER,
+          },
+        }),
       ])
       return user
     } catch (error) {
@@ -128,6 +133,7 @@ export class AuthService {
   }
 
   async login(body: LoginBodyType & { userAgent: string; ip: string }) {
+    // Lay thong tin user, kiem tra user co ton tai hay khong, mat khau co dung khong
     const user = await this.authRepository.findUniqueIncludeRole({ email: body.email })
     if (!user) {
       throw EmailNotFoundException
@@ -136,11 +142,32 @@ export class AuthService {
     if (!isPasswordValid) {
       throw InvalidPasswordException
     }
+    // Neu user da bat 2FA thi kiem tra 2FA OTP hoac OTP code tu email
+    if (user.totpSecret) {
+      if (!body.totpCode && !body.code) {
+        throw InvalidTOTPAndCodeException
+      }
+
+      if (body.totpCode) {
+        const isValid = this.twoFactorAuthService.verifyTOTP({
+          token: body.totpCode,
+          email: user.email,
+          secret: user.totpSecret,
+        })
+        if (!isValid) {
+          throw InvalidTOTPException
+        }
+      } else if (body.code) {
+        await this.validateVerificationCode({ email: user.email, code: body.code, type: TypeOfVerificationCode.LOGIN })
+      }
+    }
+    // Tao moi device
     const device = await this.authRepository.createDevice({
       userId: user.id,
       userAgent: body.userAgent,
       ip: body.ip,
     })
+    // Tao access token va refresh token, luu refresh token vao db
     const tokens = await this.generateTokens({
       userId: user.id,
       deviceId: device.id,
@@ -234,7 +261,9 @@ export class AuthService {
     // Cap nhat password moi cva xoa OTP da su dung
     await Promise.all([
       this.authRepository.updateUser({ email }, { password: hashedPassword }),
-      this.authRepository.deleteVerificationCode({ email_code_type: { email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD } }),
+      this.authRepository.deleteVerificationCode({
+        email_code_type: { email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD },
+      }),
     ])
     return { message: 'Password updated successfully' }
   }
@@ -255,5 +284,32 @@ export class AuthService {
     // Tra ve secret va uri cho client de tao QR code
     return { secret, uri }
   }
+
+  async disable2FA(data: Disable2FABodyType & { userId: number }) {
+    // Lay thong tin user kiem tra user co ton tai hay khong, va xem ho da bat 2FA chua
+    const { totpCode, userId, code } = data
+    const user = await this.shareUserRepository.findUnique({ id: userId })
+    if (!user) {
+      throw EmailNotFoundException
+    }
+    if (!user.totpSecret) {
+      throw TOTPNotEnabledException
+    }
+    // Kiem tra ma OTP co hop le khong
+    if(totpCode) {
+      const isValid = this.twoFactorAuthService.verifyTOTP({
+        token: totpCode,
+        email: user.email,
+        secret: user.totpSecret,
+      })
+      if (!isValid) {
+        throw InvalidTOTPException
+      }
+    } else if(code){
+      await this.validateVerificationCode({ email: user.email, code, type: TypeOfVerificationCode.DISABLE_2FA })
+    }
+    // Cap nhat secret thanh null de vo hieu hoa 2FA
+    await this.authRepository.updateUser({ id: userId }, { totpSecret: null })
+    return { message: '2FA disabled successfully' }
+  }
 }
-  

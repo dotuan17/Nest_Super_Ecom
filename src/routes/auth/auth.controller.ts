@@ -1,6 +1,7 @@
 import { Body, Controller, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import {
+  Disable2FABodyDTO,
   ForgotPasswordBodyDTO,
   LoginBodyDTO,
   LoginResDTO,
@@ -61,7 +62,7 @@ export class AuthController {
 
   @Post('logout')
   @ZodSerializerDto(MessageResDTO)
-  async logout(@Body() body: LogoutBodyDTO) {   
+  async logout(@Body() body: LogoutBodyDTO) {
     return await this.authService.logout(body.refreshToken)
   }
 
@@ -76,5 +77,11 @@ export class AuthController {
   @ZodSerializerDto(TwoFactorSetupResDTO)
   async setup2FA(@Body() _: EmptyBodyDTO, @ActiveUser('userId') userId: number) {
     return await this.authService.setup2FA(userId)
+  }
+
+  @Post('2fa/disable')
+  @ZodSerializerDto(MessageResDTO)
+  async disable2FA(@Body() body: Disable2FABodyDTO, @ActiveUser('userId') userId: number) {
+    return await this.authService.disable2FA({ ...body, userId })
   }
 }
