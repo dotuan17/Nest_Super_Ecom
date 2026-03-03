@@ -47,6 +47,9 @@ export const SendOTPBodySchema = VerificationCodeSchema.pick({
 export const LoginBodySchema = z.object({
     email: z.email(),
     password: z.string().min(6).max(100),
+}).extend({
+    totpCode: z.string().length(6).optional(),
+    code: z.string().length(6).optional(),
 }).strict();
 
 export const LoginResSchema = z.object({
@@ -112,6 +115,30 @@ export const ForgotPasswordBodySchema = z.object({
   }
 });
 
+export const Disable2FASchema = z.object({
+    totpCode: z.string().length(6).optional(),
+    code: z.string().length(6).optional(),
+}).strict().superRefine (({ totpCode, code }, ctx) => {  
+    if ((totpCode !== undefined) === (code !== undefined)) {
+        ctx.addIssue({
+            code: 'custom',
+            message: 'Cung cap ma xac thuc 2FA hoac ma xac thuc OTP',
+            path: ['totpCode'],
+        })
+        ctx.addIssue({
+            code: 'custom',
+            path: ['code'],
+            message: 'Cung cap ma xac thuc 2FA hoac ma xac thuc OTP',
+            
+        })
+  }
+});
+
+export const TwoFactorSetupResSchema = z.object({
+    secret: z.string(),
+    uri: z.string(),
+})
+
 export type RegisterBodyType = z.infer<typeof RegisterBodySchema>;
 export type RegisterResType = z.infer<typeof RegisterResSchema>;
 export type VerificationCodeType = z.infer<typeof VerificationCodeSchema>;
@@ -125,3 +152,5 @@ export type RoleType = z.infer<typeof RoleSchema>;
 export type RefreshTokenType = z.infer<typeof RefreshTokenSchema>;
 export type LogoutBodyType = z.infer<typeof LogoutBodySchema>;
 export type ForgotPasswordBodyType = z.infer<typeof ForgotPasswordBodySchema>;
+export type Disable2FABodyType = z.infer<typeof Disable2FASchema>;
+export type TwoFactorSetupResType = z.infer<typeof TwoFactorSetupResSchema>;

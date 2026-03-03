@@ -10,11 +10,15 @@ import {
   RegisterBodyDTO,
   RegisterResDTO,
   SendOTPBodyDTO,
+  TwoFactorSetupResDTO,
 } from './auth.dto'
 import { ZodSerializerDto } from 'nestjs-zod'
 import { UserAgent } from '../shared/decorators/user-agent.decorator'
 import { MessageResDTO } from '../shared/dtos/response.dto'
 import { IsPublic } from '../shared/decorators/auth.decorator'
+import { EmptyBodyDTO } from '../shared/dtos/request.dto'
+import { ActiveUser } from '../shared/decorators/active-user.decorator'
+import { use } from 'react'
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -57,7 +61,7 @@ export class AuthController {
 
   @Post('logout')
   @ZodSerializerDto(MessageResDTO)
-  async logout(@Body() body: LogoutBodyDTO) {
+  async logout(@Body() body: LogoutBodyDTO) {   
     return await this.authService.logout(body.refreshToken)
   }
 
@@ -66,5 +70,11 @@ export class AuthController {
   @ZodSerializerDto(MessageResDTO)
   async forgotPassword(@Body() body: ForgotPasswordBodyDTO) {
     return await this.authService.forgotPassword(body)
+  }
+
+  @Post('2fa/setup')
+  @ZodSerializerDto(TwoFactorSetupResDTO)
+  async setup2FA(@Body() _: EmptyBodyDTO, @ActiveUser('userId') userId: number) {
+    return await this.authService.setup2FA(userId)
   }
 }

@@ -26,7 +26,10 @@ import {
   InvalidOTPException,
   InvalidPasswordException,
   OTPExpiredException,
+  TOTPAlreadyEnabledException,
 } from './error.model'
+import { TwoFactorAuthService } from '../shared/services/2fa.service'
+import { email } from 'zod'
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,6 +39,7 @@ export class AuthService {
     private readonly shareUserRepository: ShareUserRepository,
     private readonly emailService: EmailService,
     private readonly tokenService: TokenService,
+    private readonly twoFactorAuthService: TwoFactorAuthService,
   ) {}
 
   async validateVerificationCode({
@@ -48,9 +52,11 @@ export class AuthService {
     type: TypeOfVerificationCodeType
   }) {
     const verificationCode = await this.authRepository.findUniqueVerificationCode({
-      email,
-      code,
-      type,
+      email_code_type: {
+        email,
+        code,
+        type,
+      },
     })
     if (!verificationCode) {
       throw InvalidOTPException
@@ -64,7 +70,7 @@ export class AuthService {
   async register(body: RegisterBodyType) {
     try {
       // Kiem tra OTP co hop le khong
-      const verify = await this.validateVerificationCode({ email: body.email, code: body.code, type: TypeOfVerificationCode.REGISTER })
+      await this.validateVerificationCode({ email: body.email, code: body.code, type: TypeOfVerificationCode.REGISTER })
 
       const hashedPassword = await this.hashingService.hash(body.password)
       const roleId = await this.roleService.getClientRoleId()
@@ -77,11 +83,11 @@ export class AuthService {
           password: hashedPassword,
           roleId,
         }),
-        this.authRepository.deleteVerificationCode({
+        this.authRepository.deleteVerificationCode({ email_code_type:{
           email: body.email,
           code: body.code,
           type: TypeOfVerificationCode.REGISTER,
-        }),
+        }}),
       ])
       return user
     } catch (error) {
@@ -228,8 +234,26 @@ export class AuthService {
     // Cap nhat password moi cva xoa OTP da su dung
     await Promise.all([
       this.authRepository.updateUser({ email }, { password: hashedPassword }),
-      this.authRepository.deleteVerificationCode({ email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD }),
+      this.authRepository.deleteVerificationCode({ email_code_type: { email, code, type: TypeOfVerificationCode.FORGOT_PASSWORD } }),
     ])
     return { message: 'Password updated successfully' }
   }
+
+  async setup2FA(userId: number) {
+    // Lay thong tin user kiem tra user co ton tai hay khong, va xem ho da bat 2FA chua
+    const user = await this.shareUserRepository.findUnique({ id: userId })
+    if (!user) {
+      throw EmailNotFoundException
+    }
+    if (user.totpSecret) {
+      throw TOTPAlreadyEnabledException
+    }
+    // Tao secret va uri
+    const { secret, uri } = this.twoFactorAuthService.generateTOTPSecret(user.email)
+    // Cap nhat secret vao user trong db
+    await this.authRepository.updateUser({ id: userId }, { totpSecret: secret })
+    // Tra ve secret va uri cho client de tao QR code
+    return { secret, uri }
+  }
 }
+  
