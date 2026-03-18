@@ -1,7 +1,6 @@
 import z from 'zod'
 import { TypeOfVerificationCode } from '../shared/constants/auth.constant'
 import { UserSchema } from '../shared/models/shared-user.model'
-import { de } from 'zod/v4/locales'
 
 // User Schema
 export const RegisterBodySchema = UserSchema.pick({

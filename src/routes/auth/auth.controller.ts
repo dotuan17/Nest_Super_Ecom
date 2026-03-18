@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post } from '@nestjs/common'
 import { AuthService } from './auth.service'
 import {
   Disable2FABodyDTO,
@@ -19,7 +19,6 @@ import { MessageResDTO } from '../shared/dtos/response.dto'
 import { IsPublic } from '../shared/decorators/auth.decorator'
 import { EmptyBodyDTO } from '../shared/dtos/request.dto'
 import { ActiveUser } from '../shared/decorators/active-user.decorator'
-import { use } from 'react'
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

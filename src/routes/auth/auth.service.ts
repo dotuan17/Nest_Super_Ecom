@@ -31,7 +31,7 @@ import {
   OTPExpiredException,
   TOTPAlreadyEnabledException,
   TOTPNotEnabledException,
-} from './error.model'
+} from './auth.error'
 import { TwoFactorAuthService } from '../shared/services/2fa.service'
 @Injectable()
 export class AuthService {
