@@ -8,9 +8,10 @@ import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from '@nestjs/core'
 import { HttpExceptionFilter } from './routes/shared/filters/http-exception.filter';
 import CustomZodValidationPipe from './routes/shared/pipes/custom-zod-validation.pipe';
 import { LanguageModule } from './routes/languages/language.module';
+import { PermissionModule } from './routes/permissions/permission.module';
   
 @Module({
-  imports: [SharedModule, AuthModule, LanguageModule],
+  imports: [SharedModule, AuthModule, LanguageModule, PermissionModule],
   controllers: [AppController],
   providers: [
     AppService,

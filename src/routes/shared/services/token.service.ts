@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import envConfig from '../config';
 import { AccessTokenPayloadCreate, RefreshTokenPayloadCreate, RefreshTokenPayload, AccessTokenPayload } from '../types/jwt.type';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class TokenService {
@@ -12,7 +12,7 @@ export class TokenService {
 
     signAccessToken(payload: AccessTokenPayloadCreate){
         return this.jwtService.sign(
-            {...payload, jti: uuidv4()},
+            {...payload, jti: randomUUID()},
             {
                 secret: envConfig.ACCESS_TOKEN_SECRET,
                 expiresIn: envConfig.ACCESS_TOKEN_EXPIRES_IN as any,
@@ -23,7 +23,7 @@ export class TokenService {
 
     signRefreshToken(payload: RefreshTokenPayloadCreate){
         return this.jwtService.sign(
-            {...payload, jti: uuidv4()},
+            {...payload, jti: randomUUID()},
             {
                 secret: envConfig.REFRESH_TOKEN_SECRET,
                 expiresIn: envConfig.REFRESH_TOKEN_EXPIRES_IN as any,

@@ -35,7 +35,6 @@ export class LanguageService {
       throw error
     }
   }
-
   async updateLanguage({id, data, updatedById}: {id: string, data: UpdateLanguageBodyType, updatedById: number}) {
     try {
       return await this.languageRepository.updateLanguage({
